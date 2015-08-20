@@ -22,6 +22,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 
 import javax.swing.GroupLayout;
@@ -35,6 +36,11 @@ import javax.swing.JPanel;
 import javax.swing.JTextField;
 import javax.swing.LayoutStyle.ComponentPlacement;
 import javax.swing.border.TitledBorder;
+import javax.xml.XMLConstants;
+import javax.xml.namespace.NamespaceContext;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.xpath.XPath;
 import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpressionException;
@@ -42,6 +48,7 @@ import javax.xml.xpath.XPathFactory;
 
 import org.knime.core.node.InvalidSettingsException;
 import org.knime.core.node.util.StringHistory;
+import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 import org.xml.sax.InputSource;
@@ -61,6 +68,7 @@ import com.pervasive.datarush.types.Field;
 import com.pervasive.datarush.types.RecordTokenType;
 import com.pervasive.datarush.types.TokenTypeConstant;
 import com.pervasive.datarush.util.FileUtil;
+import org.xml.sax.SAXException;
 
 final class XPathTableNodeDialogPane extends JPanel implements CustomDialogComponent<XPathTable> {
 	
@@ -128,7 +136,13 @@ final class XPathTableNodeDialogPane extends JPanel implements CustomDialogCompo
 		String expression = expressionTextField.getText();
 		XPath xp = XPathFactory.newInstance().newXPath();
 		try {
-			NodeList nodeList = (NodeList) xp.evaluate(expression, new InputSource(new ByteArrayInputStream(xml)),XPathConstants.NODESET);
+			DocumentBuilder db = DocumentBuilderFactory.newInstance().newDocumentBuilder();
+
+			Document dom = db.parse(new ByteArrayInputStream(xml));
+
+			xp.setNamespaceContext(new UniversalNamespaceResolver(dom));
+
+			NodeList nodeList = (NodeList) xp.evaluate(expression, dom, XPathConstants.NODESET);
 			if (nodeList.getLength() == 0) {
 				throw new InvalidSettingsException("Expression returned zero data, so cannot configure schema.");
 			}
@@ -194,8 +208,14 @@ final class XPathTableNodeDialogPane extends JPanel implements CustomDialogCompo
 			preview.setSampleData(rtl);
 		} catch (XPathExpressionException e) {
 			throw new InvalidSettingsException("Expression does not evaluate against input.",e);
-		}
-		// Everything is ok.
+		} catch (ParserConfigurationException e) {
+            throw new InvalidSettingsException("Parser error with sample document.",e);
+        } catch (SAXException e) {
+            throw new InvalidSettingsException("Parser error with sample document.",e);
+        } catch (IOException e) {
+            throw new InvalidSettingsException("Error reading sample document.",e);
+        }
+        // Everything is ok.
 		settings.expression.setStringValue(expression);
 		settings.sampleFile.setStringValue(sampleFileComboBox.getSelectedItem().toString());
 		settings.inputField.setStringValue((String) comboXML.getSelectedItem().toString());
@@ -331,6 +351,37 @@ final class XPathTableNodeDialogPane extends JPanel implements CustomDialogCompo
 		);
 		xpathPanel.setLayout(gl_xpathPanel);
 		setLayout(groupLayout);
-		
+
+    }
+
+    	// The following is from the article "Using the Java language NamespaceContext object with XPath"
+		// http://www.ibm.com/developerworks/library/x-nmspccontext/
+		private final static class UniversalNamespaceResolver implements NamespaceContext {
+
+			private Document sourceDocument;
+
+			public UniversalNamespaceResolver(Document document) {
+				sourceDocument = document;
+			}
+
+			@Override
+			public String getNamespaceURI(String prefix) {
+				if (prefix.equals(XMLConstants.DEFAULT_NS_PREFIX)) {
+					return sourceDocument.lookupNamespaceURI(null);
+				} else {
+					return sourceDocument.lookupNamespaceURI(prefix);
+				}
+			}
+
+			@Override
+			public String getPrefix(String namespaceURI) {
+				return sourceDocument.lookupPrefix(namespaceURI);
+			}
+
+			@Override
+			public Iterator<?> getPrefixes(String namespaceURI) {
+				return null;
+			}
+
 	}
 }
